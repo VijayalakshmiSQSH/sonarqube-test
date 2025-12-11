@@ -28,4 +28,4 @@ jobs:
         uses: sonarsource/sonarqube-scan-action@v2.0.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: http://<YOUR_VM_PUBLIC_IP>:9000
+          SONAR_HOST_URL: http://136.111.101.21:9000
