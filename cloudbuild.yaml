@@ -1,5 +1,5 @@
 steps:
-  # Step 1: Install the Sonar Scanner CLI
+  # Step 1: Install Sonar Scanner CLI
   - name: "gcr.io/cloud-builders/wget"
     entrypoint: "bash"
     args:
@@ -9,11 +9,11 @@ steps:
         unzip sonar-scanner-6.2.1.4610-linux-x64.zip
         mv sonar-scanner-6.2.1.4610-linux-x64 sonar-scanner
 
-  # Step 2: Run the sonar scanner
+  # Step 2: Run sonar scanner
   - name: "python:3.10"
     entrypoint: "bash"
     env:
-      - SONAR_TOKEN=${SONAR_TOKEN}
+      - SONAR_TOKEN=$_SONAR_TOKEN
     args:
       - "-c"
       - |
