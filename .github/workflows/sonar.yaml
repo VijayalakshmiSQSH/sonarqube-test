@@ -36,18 +36,20 @@ jobs:
           server_port: ${{ secrets.SMTP_PORT }}
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "❌ SonarQube Scan Failed - ${{ github.repository }}"
-          to: ${{ secrets.MAIL_TO }}
-          from: ${{ secrets.MAIL_FROM }}
-          body: |
-            SonarQube Quality Gate FAILED ❌ "check your code quality"
-
-            Repository: ${{ github.repository }}
+          subject: |
+            ❌ SonarQube Quality Gate FAILED
+            Repo: ${{ github.repository }}
             Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
+          to: ${{ secrets.MAIL_TO }}
+          from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
+          body: |
+            SonarQube Quality Gate has FAILED.
 
-            SonarQube Dashboard:
-            ${{ secrets.SONAR_HOST_URL }}/dashboard?id=my-python-test-app
+            Repository : ${{ github.repository }}
+            Branch     : ${{ github.ref_name }}
+            Commit     : ${{ github.sha }}
+            Actor      : ${{ github.actor }}
 
-            GitHub Workflow:
-            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            SonarQube Report:
+            ${{ secrets.SONAR_HOST_URL }}/dashboard?id=<YOUR_PROJECT_KEY>
+
