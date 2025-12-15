@@ -20,3 +20,26 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      - name: Send email on SonarQube failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: ❌ SonarQube Scan Failed
+          to: ${{ secrets.MAIL_TO }}
+          from: ${{ secrets.MAIL_FROM }}
+          body: |
+            SonarQube scan FAILED ❌
+
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+
+            SonarQube Dashboard:
+            ${{ secrets.SONAR_HOST_URL }}/dashboard?id=my-python-test-app
+
+            GitHub Workflow:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
