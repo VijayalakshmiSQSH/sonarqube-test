@@ -51,5 +51,30 @@ jobs:
             Actor      : ${{ github.actor }}
 
             SonarQube Report:
-            ${{ secrets.SONAR_HOST_URL }}/dashboard?id=<YOUR_PROJECT_KEY>
+            ${{ secrets.SONAR_HOST_URL }}/dashboard?id=my-python-project
+
+      - name: Send email on Sonar SUCCESS
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: |
+            ✅ SonarQube Quality Gate PASSED
+            Repo: ${{ github.repository }}
+            Branch: ${{ github.ref_name }}
+          to: ${{ secrets.MAIL_TO }}
+          from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
+          body: |
+            SonarQube Quality Gate has PASSED ✅
+
+            Repository : ${{ github.repository }}
+            Branch     : ${{ github.ref_name }}
+            Commit     : ${{ github.sha }}
+            Triggered by : ${{ github.actor }}
+
+            SonarQube Dashboard:
+            ${{ secrets.SONAR_HOST_URL }}/dashboard?id=my-python-project
 
