@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//mnt/c/Users/user/OneDrive/Desktop/Squareshift/Projects/Employee_App/development/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
