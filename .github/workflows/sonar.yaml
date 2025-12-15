@@ -40,7 +40,7 @@ jobs:
           to: ${{ secrets.MAIL_TO }}
           from: ${{ secrets.MAIL_FROM }}
           body: |
-            SonarQube Quality Gate FAILED ❌ "check your code quality before merging"
+            SonarQube Quality Gate FAILED ❌ "check your code quality"
 
             Repository: ${{ github.repository }}
             Branch: ${{ github.ref_name }}
