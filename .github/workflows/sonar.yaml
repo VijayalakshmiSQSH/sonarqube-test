@@ -46,7 +46,7 @@ jobs:
             ❌ SonarQube Quality Gate FAILED
             Repo: ${{ github.repository }}
             Branch: ${{ github.ref_name }}
-          to: ${{ steps.author.outputs.email }}
+          to: ${{ github.event.head_commit.author.email }}
           from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
           body: |
             SonarQube Quality Gate has FAILED.
@@ -71,7 +71,7 @@ jobs:
             ✅ SonarQube Quality Gate PASSED
             Repo: ${{ github.repository }}
             Branch: ${{ github.ref_name }}
-          to: ${{ steps.author.outputs.email }}
+          to: ${{ github.event.head_commit.author.email }}
           from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
           body: |
             SonarQube Quality Gate has PASSED ✅
