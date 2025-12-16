@@ -28,6 +28,12 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
+      - name: Get commit author email
+        id: author
+        run: |
+          EMAIL=$(git log -1 --pretty=format:'%ae')
+          echo "email=$EMAIL" >> $GITHUB_OUTPUT
+      
       - name: Send email on Sonar failure
         if: failure()
         uses: dawidd6/action-send-mail@v3
@@ -40,7 +46,7 @@ jobs:
             ❌ SonarQube Quality Gate FAILED
             Repo: ${{ github.repository }}
             Branch: ${{ github.ref_name }}
-          to: ${{ secrets.MAIL_TO }}
+          to: ${{ steps.author.outputs.email }}
           from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
           body: |
             SonarQube Quality Gate has FAILED.
@@ -65,7 +71,7 @@ jobs:
             ✅ SonarQube Quality Gate PASSED
             Repo: ${{ github.repository }}
             Branch: ${{ github.ref_name }}
-          to: ${{ secrets.MAIL_TO }}
+          to: ${{ steps.author.outputs.email }}
           from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
           body: |
             SonarQube Quality Gate has PASSED ✅
