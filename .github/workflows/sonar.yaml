@@ -110,4 +110,4 @@ jobs:
             Status     : ${{ job.status }}
 
             SonarQube Dashboard:
-            ${{ secrets.SONAR_HOST_URL }}/dashboard?id=<PROJECT_KEY>
+            ${{ secrets.SONAR_HOST_URL }}/dashboard?id=${{ secrets.PROJECT_KEY }}
