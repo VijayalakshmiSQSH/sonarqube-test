@@ -74,7 +74,7 @@ jobs:
           to: ${{ github.event.head_commit.author.email }}
           from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
           body: |
-            SonarQube Quality Gate has PASSED ✅ .
+            SonarQube Quality Gate has PASSED ✅
 
             Repository : ${{ github.repository }}
             Branch     : ${{ github.ref_name }}
