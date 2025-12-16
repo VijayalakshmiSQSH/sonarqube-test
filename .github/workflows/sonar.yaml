@@ -34,53 +34,80 @@ jobs:
           EMAIL=$(git log -1 --pretty=format:'%ae')
           echo "email=$EMAIL" >> $GITHUB_OUTPUT
       
-      - name: Send email on Sonar failure
-        if: failure()
+      # - name: Send email on Sonar failure
+      #   if: failure()
+      #   uses: dawidd6/action-send-mail@v3
+      #   with:
+      #     server_address: ${{ secrets.SMTP_SERVER }}
+      #     server_port: ${{ secrets.SMTP_PORT }}
+      #     username: ${{ secrets.SMTP_USERNAME }}
+      #     password: ${{ secrets.SMTP_PASSWORD }}
+      #     subject: |
+      #       ❌ SonarQube Quality Gate FAILED
+      #       Repo: ${{ github.repository }}
+      #       Branch: ${{ github.ref_name }}
+      #     to: ${{ github.event.head_commit.author.email }}
+      #     from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
+      #     body: |
+      #       SonarQube Quality Gate has FAILED.
+
+      #       Repository : ${{ github.repository }}
+      #       Branch     : ${{ github.ref_name }}
+      #       Commit     : ${{ github.sha }}
+      #       Actor      : ${{ github.actor }}
+
+      #       SonarQube Report:
+      #       ${{ secrets.SONAR_HOST_URL }}/dashboard?id=my-python-project
+
+      # - name: Send email on Sonar SUCCESS
+      #   if: success()
+      #   uses: dawidd6/action-send-mail@v3
+      #   with:
+      #     server_address: ${{ secrets.SMTP_SERVER }}
+      #     server_port: ${{ secrets.SMTP_PORT }}
+      #     username: ${{ secrets.SMTP_USERNAME }}
+      #     password: ${{ secrets.SMTP_PASSWORD }}
+      #     subject: |
+      #       ✅ SonarQube Quality Gate PASSED
+      #       Repo: ${{ github.repository }}
+      #       Branch: ${{ github.ref_name }}
+      #     to: ${{ github.event.head_commit.author.email }}
+      #     from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
+      #     body: |
+      #       SonarQube Quality Gate has PASSED ✅
+
+      #       Repository : ${{ github.repository }}
+      #       Branch     : ${{ github.ref_name }}
+      #       Commit     : ${{ github.sha }}
+      #       Triggered by : ${{ github.actor }}
+
+      #       SonarQube Dashboard:
+      #       ${{ secrets.SONAR_HOST_URL }}/dashboard?id=my-python-project
+
+      - name: Send mail (Sonar result)
+        if: always()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_SERVER }}
           server_port: ${{ secrets.SMTP_PORT }}
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: |
-            ❌ SonarQube Quality Gate FAILED
-            Repo: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-          to: ${{ github.event.head_commit.author.email }}
-          from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
-          body: |
-            SonarQube Quality Gate has FAILED.
 
+          from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
+          to: ${{ github.event.head_commit.author.email }}
+          cc: ${{ secrets.MAIL_CC }}
+
+          subject: >
+            ${{ job.status == 'success'
+                && '✅ SonarQube PASSED'
+                || '❌ SonarQube FAILED' }}
+            | ${{ github.repository }} | ${{ github.ref_name }}
+
+          body: |
             Repository : ${{ github.repository }}
             Branch     : ${{ github.ref_name }}
             Commit     : ${{ github.sha }}
-            Actor      : ${{ github.actor }}
-
-            SonarQube Report:
-            ${{ secrets.SONAR_HOST_URL }}/dashboard?id=my-python-project
-
-      - name: Send email on Sonar SUCCESS
-        if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.SMTP_SERVER }}
-          server_port: ${{ secrets.SMTP_PORT }}
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: |
-            ✅ SonarQube Quality Gate PASSED
-            Repo: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-          to: ${{ github.event.head_commit.author.email }}
-          from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
-          body: |
-            SonarQube Quality Gate has PASSED ✅
-
-            Repository : ${{ github.repository }}
-            Branch     : ${{ github.ref_name }}
-            Commit     : ${{ github.sha }}
-            Triggered by : ${{ github.actor }}
+            Status     : ${{ job.status }}
 
             SonarQube Dashboard:
-            ${{ secrets.SONAR_HOST_URL }}/dashboard?id=my-python-project
-
+            ${{ secrets.SONAR_HOST_URL }}/dashboard?id=<PROJECT_KEY>
