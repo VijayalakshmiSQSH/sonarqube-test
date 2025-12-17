@@ -2,7 +2,7 @@
 Patent Analysis Service with Vertex AI Integration.
 
 This service provides AI-powered patent analysis using Vertex AI
-and saves results to Google Cloud Storage, following the same pattern as evaluation_criteria.py.
+and saves results to Google Cloud Storage, following the pattern as evaluation_criteria.py.
 """
 
 import os
