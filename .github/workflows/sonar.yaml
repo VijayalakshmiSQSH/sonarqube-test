@@ -31,32 +31,64 @@ jobs:
       - name: Get email recipient
         if: always()
         id: email
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-        
-          COMMIT_EMAIL="${{ github.event.head_commit.author.email }}"
-          
-          # Check if it's a noreply address or empty
-          if [[ "$COMMIT_EMAIL" == *"noreply.github.com"* ]] || [[ -z "$COMMIT_EMAIL" ]]; then
-            echo "Detected noreply or empty email: $COMMIT_EMAIL"
+          # Helper function to check for noreply
+          is_noreply() {
+            [[ "$1" == *"noreply.github.com"* ]] || [[ -z "$1" ]] || [[ "$1" == "null" ]]
+          }
+
+          # 1. Start with the commit author email
+          FINAL_EMAIL=$(git log -1 --pretty=format:'%ae')
+          echo "Commit email: $FINAL_EMAIL"
+
+          if is_noreply "$FINAL_EMAIL"; then
+            echo "Commit email is noreply/empty. Searching for better address..."
             
-            # For PR events, try to get the PR author's email
-            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-              echo "recipient=${{ secrets.DEFAULT_EMAIL }}" >> $GITHUB_OUTPUT
-              echo "recipient_name=${{ github.event.pull_request.user.login }}" >> $GITHUB_OUTPUT
+            # 2. Try the pusher email (from event payload)
+            PUSHER_EMAIL="${{ github.event.pusher.email }}"
+            echo "Pusher email from payload: $PUSHER_EMAIL"
+            
+            if ! is_noreply "$PUSHER_EMAIL"; then
+              FINAL_EMAIL="$PUSHER_EMAIL"
+              echo "Using pusher email."
             else
-              # For push events, use default email
-              echo "recipient=${{ secrets.DEFAULT_EMAIL }}" >> $GITHUB_OUTPUT
-              echo "recipient_name=${{ github.actor }}" >> $GITHUB_OUTPUT
+              # 3. Try GitHub API to get the actor's public email
+              ACTOR="${{ github.actor }}"
+              echo "Fetching public email for actor: $ACTOR"
+              
+              API_EMAIL=$(gh api users/$ACTOR --jq '.email' 2>/dev/null || echo "")
+              echo "API email: $API_EMAIL"
+              
+              if [[ -n "$API_EMAIL" && "$API_EMAIL" != "null" ]]; then
+                FINAL_EMAIL="$API_EMAIL"
+                echo "Using API email."
+              else
+                 echo "No public email found for $ACTOR. Trying to get email from PR commits..."
+                 # 4. Try to get email from PR commits if this is a PR or merge
+                 # Note: This is a best effort.
+                 if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+                   PR_NUM="${{ github.event.pull_request.number }}"
+                   echo "Checking commits in PR #$PR_NUM"
+                   # Get the author email of the last commit in the PR
+                   PR_EMAIL=$(gh api repos/${{ github.repository }}/pulls/$PR_NUM/commits --jq '.[-1].commit.author.email' 2>/dev/null || echo "")
+                   if ! is_noreply "$PR_EMAIL"; then
+                      FINAL_EMAIL="$PR_EMAIL"
+                      echo "Found email in PR commit: $FINAL_EMAIL"
+                   fi
+                 fi
+              fi
             fi
-          else
-            echo "Using commit author email: $COMMIT_EMAIL"
-            echo "recipient=$COMMIT_EMAIL" >> $GITHUB_OUTPUT
-            echo "recipient_name=${{ github.event.head_commit.author.name }}" >> $GITHUB_OUTPUT
           fi
           
-          # Get the actor who triggered this workflow
-          echo "actor=${{ github.actor }}" >> $GITHUB_OUTPUT
-          echo "triggered_by=${{ github.triggering_actor }}" >> $GITHUB_OUTPUT
+          # Final check: If still noreply, we can't send email.
+          if is_noreply "$FINAL_EMAIL"; then
+            echo "::warning::Could not resolve a real email address. Recipient is $FINAL_EMAIL. Email delivery may fail if using SES Sandbox."
+          fi
+
+          echo "Resolved recipient: $FINAL_EMAIL"
+          echo "recipient=$FINAL_EMAIL" >> $GITHUB_OUTPUT
 
       - name: Send mail (Sonar result)
         if: always() && steps.email.outputs.recipient != ''
@@ -78,7 +110,7 @@ jobs:
             | ${{ github.repository }} | ${{ github.ref_name }}
 
           body: |
-            Hello ${{ steps.email.outputs.recipient_name }},
+            Hello,
             
             SonarQube scan completed for your recent code changes.
             
@@ -86,8 +118,6 @@ jobs:
             Branch     : ${{ github.ref_name }}
             Commit     : ${{ github.sha }}
             Status     : ${{ job.status }}
-            Triggered by : ${{ steps.email.outputs.triggered_by }}
-            Event type : ${{ github.event_name }}
             
             SonarQube Dashboard:
             ${{ secrets.SONAR_HOST_URL }}/dashboard?id=${{ secrets.PROJECT_KEY }}
