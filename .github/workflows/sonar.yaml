@@ -29,6 +29,7 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: Get email recipient
+        if: always()
         id: email
         run: |
         
