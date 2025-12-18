@@ -28,64 +28,37 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-      - name: Get commit author email
-        id: author
+      - name: Get email recipient
+        id: email
         run: |
-          EMAIL=$(git log -1 --pretty=format:'%ae')
-          echo "email=$EMAIL" >> $GITHUB_OUTPUT
-      
-      # - name: Send email on Sonar failure
-      #   if: failure()
-      #   uses: dawidd6/action-send-mail@v3
-      #   with:
-      #     server_address: ${{ secrets.SMTP_SERVER }}
-      #     server_port: ${{ secrets.SMTP_PORT }}
-      #     username: ${{ secrets.SMTP_USERNAME }}
-      #     password: ${{ secrets.SMTP_PASSWORD }}
-      #     subject: |
-      #       ❌ SonarQube Quality Gate FAILED
-      #       Repo: ${{ github.repository }}
-      #       Branch: ${{ github.ref_name }}
-      #     to: ${{ github.event.head_commit.author.email }}
-      #     from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
-      #     body: |
-      #       SonarQube Quality Gate has FAILED.
-
-      #       Repository : ${{ github.repository }}
-      #       Branch     : ${{ github.ref_name }}
-      #       Commit     : ${{ github.sha }}
-      #       Actor      : ${{ github.actor }}
-
-      #       SonarQube Report:
-      #       ${{ secrets.SONAR_HOST_URL }}/dashboard?id=my-python-project
-
-      # - name: Send email on Sonar SUCCESS
-      #   if: success()
-      #   uses: dawidd6/action-send-mail@v3
-      #   with:
-      #     server_address: ${{ secrets.SMTP_SERVER }}
-      #     server_port: ${{ secrets.SMTP_PORT }}
-      #     username: ${{ secrets.SMTP_USERNAME }}
-      #     password: ${{ secrets.SMTP_PASSWORD }}
-      #     subject: |
-      #       ✅ SonarQube Quality Gate PASSED
-      #       Repo: ${{ github.repository }}
-      #       Branch: ${{ github.ref_name }}
-      #     to: ${{ github.event.head_commit.author.email }}
-      #     from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
-      #     body: |
-      #       SonarQube Quality Gate has PASSED ✅
-
-      #       Repository : ${{ github.repository }}
-      #       Branch     : ${{ github.ref_name }}
-      #       Commit     : ${{ github.sha }}
-      #       Triggered by : ${{ github.actor }}
-
-      #       SonarQube Dashboard:
-      #       ${{ secrets.SONAR_HOST_URL }}/dashboard?id=my-python-project
+        
+          COMMIT_EMAIL="${{ github.event.head_commit.author.email }}"
+          
+          # Check if it's a noreply address or empty
+          if [[ "$COMMIT_EMAIL" == *"noreply.github.com"* ]] || [[ -z "$COMMIT_EMAIL" ]]; then
+            echo "Detected noreply or empty email: $COMMIT_EMAIL"
+            
+            # For PR events, try to get the PR author's email
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              echo "recipient=${{ secrets.DEFAULT_EMAIL }}" >> $GITHUB_OUTPUT
+              echo "recipient_name=${{ github.event.pull_request.user.login }}" >> $GITHUB_OUTPUT
+            else
+              # For push events, use default email
+              echo "recipient=${{ secrets.DEFAULT_EMAIL }}" >> $GITHUB_OUTPUT
+              echo "recipient_name=${{ github.actor }}" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "Using commit author email: $COMMIT_EMAIL"
+            echo "recipient=$COMMIT_EMAIL" >> $GITHUB_OUTPUT
+            echo "recipient_name=${{ github.event.head_commit.author.name }}" >> $GITHUB_OUTPUT
+          fi
+          
+          # Get the actor who triggered this workflow
+          echo "actor=${{ github.actor }}" >> $GITHUB_OUTPUT
+          echo "triggered_by=${{ github.triggering_actor }}" >> $GITHUB_OUTPUT
 
       - name: Send mail (Sonar result)
-        if: always()
+        if: always() && steps.email.outputs.recipient != ''
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_SERVER }}
@@ -94,7 +67,7 @@ jobs:
           password: ${{ secrets.SMTP_PASSWORD }}
 
           from: "SonarQube Alerts <${{ secrets.MAIL_FROM }}>"
-          to: ${{ github.event.head_commit.author.email }}
+          to: ${{ steps.email.outputs.recipient }}
           cc: ${{ secrets.MAIL_CC }}
 
           subject: >
@@ -104,10 +77,20 @@ jobs:
             | ${{ github.repository }} | ${{ github.ref_name }}
 
           body: |
+            Hello ${{ steps.email.outputs.recipient_name }},
+            
+            SonarQube scan completed for your recent code changes.
+            
             Repository : ${{ github.repository }}
             Branch     : ${{ github.ref_name }}
             Commit     : ${{ github.sha }}
             Status     : ${{ job.status }}
-
+            Triggered by : ${{ steps.email.outputs.triggered_by }}
+            Event type : ${{ github.event_name }}
+            
             SonarQube Dashboard:
             ${{ secrets.SONAR_HOST_URL }}/dashboard?id=${{ secrets.PROJECT_KEY }}
+            
+            ---
+            This is an automated message from SonarQube CI/CD pipeline.
+
