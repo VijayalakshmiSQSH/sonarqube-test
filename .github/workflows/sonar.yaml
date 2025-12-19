@@ -29,87 +29,76 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: Get email recipient
-        if: always()
         id: email
-        # GITHUB_TOKEN is built-in and always valid; fixes "Bad credentials"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEFAULT_EMAIL: ${{ secrets.DEFAULT_EMAIL }} # Required fallback
+          DEFAULT_EMAIL: ${{ secrets.DEFAULT_EMAIL }}
         run: |
-          # ----------------------------------------------------------------------
-          # DYNAMIC EMAIL RESOLUTION LOGIC
-          # Priority:
-          # 1. Payload (Pusher Email) - valid for Pushes
-          # 2. API Profile - valid if user has public email
-          # 3. Git History Deep Scan - looks for past commits with real email
-          # 4. Default Secret - final safety net
-          # ----------------------------------------------------------------------
-
           ACTOR="${{ github.actor }}"
-          echo "Resolving email for Actor: $ACTOR"
+          echo "Resolving details for Actor: $ACTOR"
           
-          # Function to validate email (must not be empty, null, or noreply)
+          # Initialize variables
+          FINAL_EMAIL=""
+          FINAL_NAME=""
+          TRIGGERED_BY="$ACTOR"
+
+          # Function to validate email
           validate_email() {
-            local email=$1
-            if [[ -n "$email" ]] && [[ "$email" != "null" ]] && [[ "$email" != *"noreply.github.com"* ]]; then
-              return 0 # Valid
-            else
-              return 1 # Invalid
-            fi
+            [[ -n "$1" ]] && [[ "$1" != "null" ]] && [[ "$1" != *"noreply.github.com"* ]]
           }
 
-          FOUND_EMAIL=""
-
-          # [Attempt 1] Check Event Payload (Works for standard Pushes)
-          PAYLOAD_EMAIL="${{ github.event.pusher.email }}"
-          if validate_email "$PAYLOAD_EMAIL"; then
-            echo "✅ Found valid email in push payload."
-            FOUND_EMAIL="$PAYLOAD_EMAIL"
-          fi
-
-          # [Attempt 2] Check GitHub API (Works if user profile is Public)
-          if [[ -z "$FOUND_EMAIL" ]]; then
-            echo "🔍 Payload email invalid/missing. Checking GitHub API..."
-            # || true prevents script crash on 404/403
-            API_EMAIL=$(gh api "users/$ACTOR" --jq '.email' 2>/dev/null || true)
-            
-            if validate_email "$API_EMAIL"; then
-              echo "✅ Found valid email in Public Profile API."
-              FOUND_EMAIL="$API_EMAIL"
-            fi
-          fi
-
-          # [Attempt 3] Deep Git History Scan (The "Magic" Step)
-          # If the user is merging via Web UI (noreply), this scans their 
-          # previous 500 commits to find ONE where they used a real email.
-          if [[ -z "$FOUND_EMAIL" ]]; then
-            echo "🔍 API failed. Scanning last 500 commits for a real address..."
-            
-            # 1. Get emails by this author
-            # 2. Filter OUT noreply
-            # 3. Take the first one found
-            HISTORY_EMAIL=$(git log --author="$ACTOR" -n 500 --pretty=format:'%ae' | grep -v 'noreply.github.com' | head -n 1)
-            
-            if validate_email "$HISTORY_EMAIL"; then
-              echo "✅ Found valid email in Git History."
-              FOUND_EMAIL="$HISTORY_EMAIL"
-            fi
-          fi
-
-          # [Final Fallback]
-          if [[ -z "$FOUND_EMAIL" ]]; then
-            echo "⚠️ No real email found in Payload, API, or History."
-            echo "⚠️ User '$ACTOR' likely has 'Keep my email private' enabled permanently."
-            echo "⚠️ Using Default Fallback."
-            FOUND_EMAIL="$DEFAULT_EMAIL"
-          fi
-
-          echo "----------------------------------------"
-          echo "🎯 Final Resolved Recipient: $FOUND_EMAIL"
-          echo "----------------------------------------"
+          # --- 1. Try API (Best for Real Name & Public Email) ---
+          # We fetch both 'email' and 'name' from the profile
+          USER_DATA=$(gh api "users/$ACTOR" 2>/dev/null || echo "{}")
           
-          echo "recipient=$FOUND_EMAIL" >> $GITHUB_OUTPUT
+          API_EMAIL=$(echo "$USER_DATA" | jq -r '.email // empty')
+          API_NAME=$(echo "$USER_DATA" | jq -r '.name // empty')
+          
+          if validate_email "$API_EMAIL"; then
+             FINAL_EMAIL="$API_EMAIL"
+          fi
+          
+          if [[ -n "$API_NAME" && "$API_NAME" != "null" ]]; then
+             FINAL_NAME="$API_NAME"
+          fi
 
+          # --- 2. Try Git History (Backup for Email & Name) ---
+          if [[ -z "$FINAL_EMAIL" ]] || [[ -z "$FINAL_NAME" ]]; then
+            echo "Searching Git history..."
+            # Get latest log entry by this author that isn't noreply
+            LOG_ENTRY=$(git log --author="$ACTOR" -n 100 --pretty=format:'%an|%ae' | grep -v 'noreply.github.com' | head -n 1)
+            
+            HISTORY_NAME=$(echo "$LOG_ENTRY" | cut -d'|' -f1)
+            HISTORY_EMAIL=$(echo "$LOG_ENTRY" | cut -d'|' -f2)
+
+            # If we still lack email, use history
+            if [[ -z "$FINAL_EMAIL" ]] && validate_email "$HISTORY_EMAIL"; then
+               FINAL_EMAIL="$HISTORY_EMAIL"
+            fi
+            
+            # If we still lack name, use history name
+            if [[ -z "$FINAL_NAME" ]] && [[ -n "$HISTORY_NAME" ]]; then
+               FINAL_NAME="$HISTORY_NAME"
+            fi
+          fi
+
+          # --- 3. Fallbacks ---
+          # If name is still empty, fallback to Username
+          if [[ -z "$FINAL_NAME" ]]; then
+             FINAL_NAME="$ACTOR"
+          fi
+          
+          # If email is still empty, use Default
+          if [[ -z "$FINAL_EMAIL" ]]; then
+             FINAL_EMAIL="$DEFAULT_EMAIL"
+          fi
+
+          # Set Outputs
+          echo "recipient=$FINAL_EMAIL" >> $GITHUB_OUTPUT
+          echo "recipient_name=$FINAL_NAME" >> $GITHUB_OUTPUT
+          echo "triggered_by=$TRIGGERED_BY" >> $GITHUB_OUTPUT
+          
+          echo "✅ Resolved: $FINAL_NAME <$FINAL_EMAIL>"
 
       - name: Send mail (Sonar result)
         if: always() && steps.email.outputs.recipient != ''
@@ -130,8 +119,9 @@ jobs:
                 || '❌ SonarQube FAILED' }}
             | ${{ github.repository }} | ${{ github.ref_name }}
 
+          # Your EXACT Requested Body Format
           body: |
-            Hello,
+            Hello ${{ steps.email.outputs.recipient_name }},
             
             SonarQube scan completed for your recent code changes.
             
@@ -139,10 +129,11 @@ jobs:
             Branch     : ${{ github.ref_name }}
             Commit     : ${{ github.sha }}
             Status     : ${{ job.status }}
+            Triggered by : ${{ steps.email.outputs.triggered_by }}
+            Event type : ${{ github.event_name }}
             
             SonarQube Dashboard:
             ${{ secrets.SONAR_HOST_URL }}/dashboard?id=${{ secrets.PROJECT_KEY }}
             
             ---
             This is an automated message from SonarQube CI/CD pipeline.
-
