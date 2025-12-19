@@ -102,7 +102,7 @@ jobs:
           echo "✅ Resolved: $FINAL_NAME <$FINAL_EMAIL>"
 
       - name: Send mail (Sonar result)
-        if: always() && steps.email.outputs.recipient != ''
+        if: always()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_SERVER }}
