@@ -31,64 +31,85 @@ jobs:
       - name: Get email recipient
         if: always()
         id: email
+        # GITHUB_TOKEN is built-in and always valid; fixes "Bad credentials"
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_EMAIL: ${{ secrets.DEFAULT_EMAIL }} # Required fallback
         run: |
-          # Helper function to check for noreply
-          is_noreply() {
-            [[ "$1" == *"noreply.github.com"* ]] || [[ -z "$1" ]] || [[ "$1" == "null" ]]
+          # ----------------------------------------------------------------------
+          # DYNAMIC EMAIL RESOLUTION LOGIC
+          # Priority:
+          # 1. Payload (Pusher Email) - valid for Pushes
+          # 2. API Profile - valid if user has public email
+          # 3. Git History Deep Scan - looks for past commits with real email
+          # 4. Default Secret - final safety net
+          # ----------------------------------------------------------------------
+
+          ACTOR="${{ github.actor }}"
+          echo "Resolving email for Actor: $ACTOR"
+          
+          # Function to validate email (must not be empty, null, or noreply)
+          validate_email() {
+            local email=$1
+            if [[ -n "$email" ]] && [[ "$email" != "null" ]] && [[ "$email" != *"noreply.github.com"* ]]; then
+              return 0 # Valid
+            else
+              return 1 # Invalid
+            fi
           }
 
-          # 1. Start with the commit author email
-          FINAL_EMAIL=$(git log -1 --pretty=format:'%ae')
-          echo "Commit email: $FINAL_EMAIL"
+          FOUND_EMAIL=""
 
-          if is_noreply "$FINAL_EMAIL"; then
-            echo "Commit email is noreply/empty. Searching for better address..."
+          # [Attempt 1] Check Event Payload (Works for standard Pushes)
+          PAYLOAD_EMAIL="${{ github.event.pusher.email }}"
+          if validate_email "$PAYLOAD_EMAIL"; then
+            echo "✅ Found valid email in push payload."
+            FOUND_EMAIL="$PAYLOAD_EMAIL"
+          fi
+
+          # [Attempt 2] Check GitHub API (Works if user profile is Public)
+          if [[ -z "$FOUND_EMAIL" ]]; then
+            echo "🔍 Payload email invalid/missing. Checking GitHub API..."
+            # || true prevents script crash on 404/403
+            API_EMAIL=$(gh api "users/$ACTOR" --jq '.email' 2>/dev/null || true)
             
-            # 2. Try the pusher email (from event payload)
-            PUSHER_EMAIL="${{ github.event.pusher.email }}"
-            echo "Pusher email from payload: $PUSHER_EMAIL"
-            
-            if ! is_noreply "$PUSHER_EMAIL"; then
-              FINAL_EMAIL="$PUSHER_EMAIL"
-              echo "Using pusher email."
-            else
-              # 3. Try GitHub API to get the actor's public email
-              ACTOR="${{ github.actor }}"
-              echo "Fetching public email for actor: $ACTOR"
-              
-              API_EMAIL=$(gh api users/$ACTOR --jq '.email' 2>/dev/null || echo "")
-              echo "API email: $API_EMAIL"
-              
-              if [[ -n "$API_EMAIL" && "$API_EMAIL" != "null" ]]; then
-                FINAL_EMAIL="$API_EMAIL"
-                echo "Using API email."
-              else
-                 echo "No public email found for $ACTOR. Trying to get email from PR commits..."
-                 # 4. Try to get email from PR commits if this is a PR or merge
-                 # Note: This is a best effort.
-                 if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-                   PR_NUM="${{ github.event.pull_request.number }}"
-                   echo "Checking commits in PR #$PR_NUM"
-                   # Get the author email of the last commit in the PR
-                   PR_EMAIL=$(gh api repos/${{ github.repository }}/pulls/$PR_NUM/commits --jq '.[-1].commit.author.email' 2>/dev/null || echo "")
-                   if ! is_noreply "$PR_EMAIL"; then
-                      FINAL_EMAIL="$PR_EMAIL"
-                      echo "Found email in PR commit: $FINAL_EMAIL"
-                   fi
-                 fi
-              fi
+            if validate_email "$API_EMAIL"; then
+              echo "✅ Found valid email in Public Profile API."
+              FOUND_EMAIL="$API_EMAIL"
             fi
           fi
-          
-          # Final check: If still noreply, we can't send email.
-          if is_noreply "$FINAL_EMAIL"; then
-            echo "::warning::Could not resolve a real email address. Recipient is $FINAL_EMAIL. Email delivery may fail if using SES Sandbox."
+
+          # [Attempt 3] Deep Git History Scan (The "Magic" Step)
+          # If the user is merging via Web UI (noreply), this scans their 
+          # previous 500 commits to find ONE where they used a real email.
+          if [[ -z "$FOUND_EMAIL" ]]; then
+            echo "🔍 API failed. Scanning last 500 commits for a real address..."
+            
+            # 1. Get emails by this author
+            # 2. Filter OUT noreply
+            # 3. Take the first one found
+            HISTORY_EMAIL=$(git log --author="$ACTOR" -n 500 --pretty=format:'%ae' | grep -v 'noreply.github.com' | head -n 1)
+            
+            if validate_email "$HISTORY_EMAIL"; then
+              echo "✅ Found valid email in Git History."
+              FOUND_EMAIL="$HISTORY_EMAIL"
+            fi
           fi
 
-          echo "Resolved recipient: $FINAL_EMAIL"
-          echo "recipient=$FINAL_EMAIL" >> $GITHUB_OUTPUT
+          # [Final Fallback]
+          if [[ -z "$FOUND_EMAIL" ]]; then
+            echo "⚠️ No real email found in Payload, API, or History."
+            echo "⚠️ User '$ACTOR' likely has 'Keep my email private' enabled permanently."
+            echo "⚠️ Using Default Fallback."
+            FOUND_EMAIL="$DEFAULT_EMAIL"
+          fi
+
+          echo "----------------------------------------"
+          echo "🎯 Final Resolved Recipient: $FOUND_EMAIL"
+          echo "----------------------------------------"
+          
+          echo "recipient=$FOUND_EMAIL" >> $GITHUB_OUTPUT
+
 
       - name: Send mail (Sonar result)
         if: always() && steps.email.outputs.recipient != ''
